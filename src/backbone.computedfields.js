@@ -1,6 +1,6 @@
-Backbone.ComputedFields = (function(Backbone, _){
+Backbone.ComputedFields = (function(Backbone, _) {
 
-    var ComputedFields = function (model) {
+    var ComputedFields = function(model) {
         this.model = model;
         this._computedFields = [];
 
@@ -8,7 +8,7 @@ Backbone.ComputedFields = (function(Backbone, _){
     };
 
     _.extend(ComputedFields.prototype, {
-        initialize: function () {
+        initialize: function() {
             _.bindAll(
                 this,
                 '_bindModelEvents',
@@ -28,29 +28,27 @@ Backbone.ComputedFields = (function(Backbone, _){
             this._wrapJSON();
         },
 
-        _lookUpComputedFields: function () {
+        _lookUpComputedFields: function() {
             var computed = _.isFunction(this.model.computed) ? this.model.computed() : this.model.computed;
 
-            for (var obj in computed) {
-                var field = computed[obj];
-
-                if (field && (field.set || field.get)) {
-                    this._computedFields.push({name: obj, field: field});
+            _.each(computed, function(field, name) {
+                if (_.isObject(field)) {
+                    this._computedFields.push({name: name, field: field});
                 }
-            }
+            }, this);
         },
 
-        _bindModelEvents: function () {
-            _.each(this._computedFields, function (computedField) {
+        _bindModelEvents: function() {
+            _.each(this._computedFields, function(computedField) {
                 var fieldName = computedField.name;
                 var field = computedField.field;
 
-                var updateComputed = _.bind(function () {
+                var updateComputed = _.bind(function() {
                     var value = this._computeFieldValue(field);
-                    this.model.set(fieldName, value, { skipChangeEvent: true });
+                    this.model.set(fieldName, value, {skipChangeEvent: true});
                 }, this);
 
-                var updateDependent = _.bind(function (model, value, options) {
+                var updateDependent = _.bind(function(model, value, options) {
                     if (options && options.skipChangeEvent) {
                         return;
                     }
@@ -73,14 +71,21 @@ Backbone.ComputedFields = (function(Backbone, _){
             }, this);
         },
 
-        _isModelInitialized: function () {
+        _isModelInitialized: function() {
             return !_.isEmpty(this.model.attributes);
         },
 
-        _thenDependentChanges: function (depends, callback) {
-            _.each(depends, function (name) {
+        _thenDependentChanges: function(depends, callback) {
+            _.each(depends, function(name) {
                 if (typeof (name) === 'string') {
-                    this.model.on('change:' + name, callback);
+                    var value = this.model.get(name);
+                    if (value instanceof Backbone.Collection) {
+                        value.on('add remove reset change', callback);
+                    } else if (value instanceof Backbone.Model) {
+                        value.on('change', callback);
+                    } else {
+                        this.model.on('change:' + name, callback);
+                    }
                 }
 
                 if (typeof (name) === 'function') {
@@ -89,38 +94,38 @@ Backbone.ComputedFields = (function(Backbone, _){
             }, this);
         },
 
-        _thenComputedChanges: function (fieldName, callback) {
+        _thenComputedChanges: function(fieldName, callback) {
             this.model.on('change:' + fieldName, callback);
         },
 
-        _wrapJSON: function () {
+        _wrapJSON: function() {
             this.model.toJSON = _.wrap(this.model.toJSON, this._toJSON);
         },
 
-        _toJSON: function (toJSON) {
+        _toJSON: function(toJSON) {
             var args = Array.prototype.slice.call(arguments, 1),
                 attributes = toJSON.apply(this.model, args),
                 strip = !!(args[0] || {}).computedFields;
 
-            var stripped = strip ? {} : _.reduce(this._computedFields, function (memo, computed) {
+            var stripped = strip ? {} : _.reduce(this._computedFields, function(memo, computed) {
                 if (computed.field.toJSON === false) {
                     memo.push(computed.name);
                 }
                 return memo;
-            },[]);
+            }, []);
 
             return _.omit(attributes, stripped);
         },
 
-        _computeFieldValue: function (computedField) {
+        _computeFieldValue: function(computedField) {
             if (computedField && computedField.get) {
                 var fields = this._dependentFields(computedField.depends);
                 return computedField.get.call(this.model, fields);
             }
         },
 
-        _dependentFields: function (depends) {
-            return _.reduce(depends, function (memo, field) {
+        _dependentFields: function(depends) {
+            return _.reduce(depends, function(memo, field) {
                 memo[field] = this.model.get(field);
                 return memo;
             }, {}, this);
